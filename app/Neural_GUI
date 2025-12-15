@@ -1,0 +1,1060 @@
+% clc
+% clear
+% close all
+%%
+function interfazBienvenida()
+    clc
+    % Ventana de bienvenida
+    fig = uifigure('Name','Pantalla de Bienvenida','Position',[300 100 800 600],...
+        'Color',[0.8 0.8 0.8]);
+
+    % ---- Título ----
+    uilabel(fig,'Text','Interfaz para Experimentación de Redes Neuronales',...
+        'FontSize',24,'FontWeight','bold','Position',[50 520 700 50],...
+        'HorizontalAlignment','center');
+
+    % ---- Descripción ----
+    descripcion = ['Esta aplicación ha sido diseñada para permitir la ' ...
+                   'experimentación con distintos modelos de redes neuronales,' ...
+                   ' aplicadas a tareas de clasificación, regresión y modelado de sistemas.'];
+    uilabel(fig,'Text',descripcion,'FontSize',14,'HorizontalAlignment','center','WordWrap','on',...
+        'Position',[100 430 600 70]);
+
+    % ---- Botón Inicio ----
+    uibutton(fig,'Text','Inicio','FontSize',16,'Position',[300 300 200 50],...
+        'ButtonPushedFcn',@(btn,event) abrirSegundaVentana(fig));
+
+    % ---- Botón Salir ----
+    uibutton(fig,'Text','Salir','FontSize',16,'Position',[300 220 200 50],...
+        'ButtonPushedFcn',@(btn,event) close(fig));
+
+    % ---- Créditos ----
+    uilabel(fig,'Text','Felipe Jesús Mercado Mercado','HorizontalAlignment','center','Position',[250 100 300 20]);
+    uilabel(fig,'Text','José David Gómez Bedoya','HorizontalAlignment','center','Position',[250 80 300 20]);
+    uilabel(fig,'Text','Asignatura: Inteligencia Artificial en Sistemas Mecatrónicos','HorizontalAlignment','center','Position',[150 40 500 20]);
+end
+
+function abrirSegundaVentana(figAnterior)
+    close(figAnterior);
+    interfazSeleccionRed();
+end
+
+function interfazSeleccionRed()
+    fig = uifigure('Name','Seleccionar Red Neuronal','Position',[400 150 900 600]);
+    uilabel(fig,'Text','Seleccione la Red Neuronal a Probar','FontSize',20,'FontWeight','bold',...
+        'Position',[100 500 700 50],'HorizontalAlignment','center');
+
+    nombres = {'Perceptrón Simple','Regresión Lineal con Red Adaline','Filtrado Adaptativo con Red Adaline','Modelado Complejo con MRNA'};
+    for i = 1:4
+        uibutton(fig,'Text',nombres{i},'Position',[275 450-(i*80) 350 60],'FontSize',16,...
+            'ButtonPushedFcn',@(btn,event) abrirConfiguracion(fig,nombres{i}));
+    end
+end
+
+function datos = cargarDatos(archivo)
+    try
+        [~,~,ext] = fileparts(archivo);
+        
+        if strcmp(ext,'.txt')
+            % Para archivos TXT, usar readtable primero para detectar encabezados
+            opts = detectImportOptions(archivo);
+            if isa(opts, 'matlab.io.text.DelimitedTextImportOptions')
+                % Verificar si la primera fila contiene texto (posible encabezado)
+                temp_table = readtable(archivo, 'Range', '1:2'); % Leer solo las primeras 2 filas
+                primera_fila = table2array(temp_table(1,:));
+                
+                % Si la primera fila contiene NaN o texto, probablemente sea encabezado
+                if any(isnan(primera_fila)) || any(~isnumeric(primera_fila))
+                    % Leer sin la primera fila (encabezado)
+                    datos = readmatrix(archivo, 'Range', '2:end');
+                    fprintf('Encabezado detectado y omitido en archivo TXT.\n');
+                else
+                    % No hay encabezado, leer todo
+                    datos = readmatrix(archivo);
+                end
+            else
+                datos = readmatrix(archivo);
+            end
+            
+        elseif strcmp(ext,'.xlsx') || strcmp(ext,'.xls')
+            % Para archivos Excel, usar readtable primero para detectar encabezados
+            try
+                % Intentar leer como tabla para detectar encabezados automáticamente
+                temp_table = readtable(archivo, 'Range', '1:2');
+                primera_fila = temp_table{1,:}; % Obtener la primera fila
+                
+                % Verificar si la primera fila es completamente numérica
+                if all(isnumeric(primera_fila)) && ~any(isnan(primera_fila))
+                    % No hay encabezado, leer todo
+                    datos = readmatrix(archivo);
+                else
+                    % Hay encabezado, leer desde la segunda fila
+                    datos = readmatrix(archivo, 'Range', '2:end');
+                    fprintf('Encabezado detectado y omitido en archivo Excel.\n');
+                end
+            catch
+                % Si falla la detección, intentar leer todo el archivo
+                datos = readmatrix(archivo);
+            end
+            
+        else
+            error('Formato no válido. Use TXT o Excel.');
+        end
+        
+        % Verificar que los datos sean válidos después de procesar encabezados
+        if isempty(datos) || all(isnan(datos(:))) || any(isinf(datos(:)))
+            error('Los datos contienen valores vacíos, NaN o infinitos.');
+        end
+        
+        % Remover filas que contengan NaN (por si quedan algunas)
+        filas_validas = ~any(isnan(datos), 2);
+        if sum(filas_validas) < size(datos,1)
+            datos = datos(filas_validas, :);
+            fprintf('Se removieron %d filas con valores NaN.\n', size(datos,1) - sum(filas_validas));
+        end
+        
+        % Verificar dimensiones mínimas
+        if size(datos,1) < 3 || size(datos,2) < 2
+            error('Los datos deben tener al menos 3 filas y 2 columnas después de procesar.');
+        end
+        
+        fprintf('Datos cargados exitosamente: %d filas x %d columnas.\n', size(datos,1), size(datos,2));
+        
+    catch ME
+        error(['Error al cargar archivo: ' ME.message]);
+    end
+end
+
+function abrirConfiguracion(figAnterior, nombreRed)
+    close(figAnterior);
+    fig = uifigure('Name','Configuración de Red','Position',[400 150 900 600]);
+    uilabel(fig,'Text',['Configuración: ' nombreRed],'FontSize',20,'FontWeight','bold',...
+        'Position',[100 500 700 50],'HorizontalAlignment','center');
+
+    % Campos de configuración
+    uilabel(fig,'Text','Número de Épocas:','FontSize',14,'Position',[250 400 200 30],'HorizontalAlignment','right');
+    txtEpocas = uieditfield(fig,'numeric','Position',[470 400 150 30],'Value',100);
+
+    uilabel(fig,'Text','Tasa de Aprendizaje:','FontSize',14,'Position',[250 350 200 30],'HorizontalAlignment','right');
+    txtTasa = uieditfield(fig,'numeric','Position',[470 350 150 30],'Value',0.01);
+
+    uilabel(fig,'Text','Error Permitido:','FontSize',14,'Position',[250 300 200 30],'HorizontalAlignment','right');
+    txtError = uieditfield(fig,'numeric','Position',[470 300 150 30],'Value',0.001);
+
+    % Configuraciones adicionales para MRNA
+    txtNeuronas = [];
+    txtRegresores = [];
+    if contains(nombreRed, 'MRNA')
+        uilabel(fig,'Text','Neuronas Capa Oculta:','FontSize',14,'Position',[250 250 200 30],'HorizontalAlignment','right');
+        txtNeuronas = uieditfield(fig,'numeric','Position',[470 250 150 30],'Value',10);
+        uilabel(fig,'Text','Número de Regresores:','FontSize',14,'Position',[250 200 200 30],'HorizontalAlignment','right');
+        txtRegresores = uieditfield(fig,'numeric','Position',[470 200 150 30],'Value',5);
+    end
+
+    % Configuraciones adicionales para Filtrado Adaptativo
+    if contains(nombreRed, 'Filtrado Adaptativo')
+        uilabel(fig,'Text','Cantidad de Regresores:','FontSize',14,'Position',[250 250 200 30],'HorizontalAlignment','right');
+        txtRegresores = uieditfield(fig,'numeric','Position',[470 250 150 30],'Value',5);
+    end
+
+    % Variable global para archivo
+    archivoCargado = '';
+    lblArchivo = uilabel(fig,'Text','Ningún archivo seleccionado','FontSize',12,...
+        'Position',[250 150 400 25],'HorizontalAlignment','center','FontColor',[0.6 0.6 0.6]);
+
+    % Botón para cargar archivo
+    uibutton(fig,'Text','Cargar Datos (.txt o .xlsx)','Position',[350 100 200 40],'FontSize',14,...
+        'ButtonPushedFcn',@seleccionarArchivo);
+
+    % FUNCIÓN INTERNA PARA SELECCIONAR ARCHIVO
+    function seleccionarArchivo(~,~)
+        [file,path] = uigetfile({'*.txt;*.xlsx;*.xls','Archivos de datos (*.txt, *.xlsx)'},...
+            'Seleccionar archivo de datos'); 
+        if isequal(file,0)
+            uialert(fig,'No se seleccionó ningún archivo','Aviso');
+        else
+            archivoCargado = fullfile(path,file);
+            lblArchivo.Text = ['Archivo: ' file];
+            lblArchivo.FontColor = [0 0.6 0]; % Verde
+            figure(fig);
+            uialert(fig,['Archivo cargado exitosamente: ' file],'Éxito');
+        end
+    end
+
+    % Botón Entrenar
+    uibutton(fig, 'Text', 'Entrenar', 'Position', [100 80 150 50], ...
+        'ButtonPushedFcn', @ejecutarEntrenamiento);
+
+    % FUNCIÓN INTERNA PARA EJECUTAR ENTRENAMIENTO
+   function ejecutarEntrenamiento(~,~)
+   if isempty(archivoCargado)
+       uialert(fig,'Debe cargar un archivo antes de entrenar','Error');
+       return;
+   end
+   
+   % Validar parámetros
+   if txtEpocas.Value <= 0 || txtTasa.Value <= 0 || txtError.Value <= 0
+       uialert(fig,'Los parámetros deben ser valores positivos','Error');
+       return;
+   end
+   
+   % Guardar valores antes de cerrar la ventana
+   epocas = txtEpocas.Value;
+   tasa = txtTasa.Value;
+   errorPerm = txtError.Value;
+   archivo = archivoCargado;
+   
+   % Guardar valor de neuronas si existe
+   neuronas = [];
+   if ~isempty(txtNeuronas)
+       neuronas = txtNeuronas.Value;
+   end
+   
+   % Guardar valor de regresores si existe
+   regresores = [];
+   if ~isempty(txtRegresores)
+       regresores = txtRegresores.Value;
+   end
+   
+   try
+       % Cerrar la ventana ANTES de ejecutar entrenamiento
+       close(fig);
+       
+       % Ejecutar según el tipo de red
+       if strcmp(nombreRed,'Perceptrón Simple')
+           entrenarPerceptronCorregido(archivo, epocas, tasa, errorPerm);
+       elseif strcmp(nombreRed,'Regresión Lineal con Red Adaline')
+           entrenarAdalineRegresion(archivo, epocas, tasa, errorPerm);
+       elseif strcmp(nombreRed,'Filtrado Adaptativo con Red Adaline')
+           if isempty(regresores) || regresores <= 0
+               msgbox('Debe especificar un número válido de regresores','Error','error');
+               interfazSeleccionRed();
+               return;
+           end
+           entrenarAdalineFiltrado(archivo, epocas, tasa, errorPerm, regresores);
+       elseif strcmp(nombreRed,'Modelado Complejo con MRNA')
+           if isempty(neuronas) || neuronas <= 0
+               msgbox('Debe especificar un número válido de neuronas ocultas','Error','error');
+               interfazSeleccionRed();
+               return;
+           end
+           if isempty(regresores) || regresores <= 0
+               msgbox('Debe especificar un número válido de regresores','Error','error');
+               interfazSeleccionRed();
+               return;
+           end
+           entrenarMRNA(archivo, epocas, tasa, errorPerm, neuronas,regresores);
+       end
+       
+   catch ME
+       fprintf('Error: %s\n', ME.message);
+       msgbox(['Error durante el entrenamiento: ' ME.message],'Error','error');
+       interfazSeleccionRed(); % Volver al menú principal
+   end
+end
+
+    % Botón Volver
+    uibutton(fig,'Text','Volver','Position',[350 40 200 40],'FontSize',14,...
+        'ButtonPushedFcn',@(btn,event) volverSeleccion(fig));
+
+    % Botón Cerrar
+    uibutton(fig,'Text','Cerrar','Position',[600 80 150 50],'FontSize',14,...
+        'ButtonPushedFcn',@(btn,event) close(fig));
+end
+
+function volverSeleccion(fig)
+    close(fig);
+    interfazSeleccionRed();
+end
+
+% PERCEPTRÓN SIMPLE SIMPLIFICADO
+function entrenarPerceptronCorregido(archivo, epocasMax, tasaAprendizaje, errorPermitido)
+   try
+       % Cargar datos
+       datos = cargarDatos(archivo);
+       
+       % Detectar dimensionalidad automáticamente
+       numDim = size(datos, 2) - 1; % Restar 1 por la columna target
+       
+       % Separar datos según dimensionalidad
+       if numDim == 2
+           x_1 = datos(:,1)';
+           x_2 = datos(:,2)';
+           T = datos(:,3)';
+           X_completo = [x_1; x_2];
+       else % numDim == 3
+           x_1 = datos(:,1)';
+           x_2 = datos(:,2)';
+           x_3 = datos(:,3)';
+           T = datos(:,4)';
+           X_completo = [x_1; x_2; x_3];
+       end
+       
+        % Porción de datos de entrenamiento
+        Porcion_datos_entrenamiento = 0.7; % De 0 a 1
+        numEntrenamiento = round(size(X_completo, 2) * Porcion_datos_entrenamiento);
+        P = X_completo(:, 1:numEntrenamiento);
+        Target = T(1:numEntrenamiento);
+        
+        % Parámetros
+        tasa_aprendizaje = tasaAprendizaje;
+        b = rand(1);
+        W = rand(1, numDim);
+        e = 1;
+        epoca = 0;
+       
+        error_epoca = 10;
+       
+       % Ciclo de entrenamiento
+       while (error_epoca > errorPermitido && epoca < epocasMax)
+           for k=1:length(Target)
+               yp = W*P(:, k) + b;
+               % Función de activación
+               if yp >= 0
+                   yt(k) = 1;
+               else
+                   yt(k) = 0;
+               end
+               % Error y actualización de pesos
+               e(k) = Target(k) - yt(k);
+               W = W + tasa_aprendizaje*e(k)*P(:,k)';
+               b = b + tasa_aprendizaje*e(k);
+           end
+           epoca = epoca + 1;
+           
+           % Calcular error de época
+           error_epoca = numel(e(e~=0));
+       end
+       
+       % Mostrar resultados finales
+       fprintf('\n=== RESULTADOS FINALES ===\n');
+       fprintf('Error final de entrenamiento: %.6f\n', error_epoca);
+       fprintf('Épocas completadas: %d\n', epoca);
+       if numDim == 2
+           fprintf('Pesos finales: W = [%.4f %.4f]\n', W(1), W(2));
+       else
+           fprintf('Pesos finales: W = [%.4f %.4f %.4f]\n', W(1), W(2), W(3));
+       end
+       fprintf('Sesgo final: b = %.4f\n', b);
+       
+       % Mensaje para el usuario
+       mensaje = sprintf(['PERCEPTRÓN ENTRENADO EXITOSAMENTE\n\n' ...
+                         '• Épocas completadas: %d\n' ...
+                         '• Error final: %.6f\n' ...
+                         'Los gráficos se mostrarán a continuación.'], ...
+                         epoca, error_epoca);
+       
+       msgbox(mensaje, 'Entrenamiento Completado', 'help');
+       
+       % Generar gráficos
+       graficarResultadosPerceptron(X_completo, W, b,numDim);
+      
+       
+   catch ME
+       fprintf('ERROR: %s\n', ME.message);
+       msgbox(['Error durante el entrenamiento del Perceptrón: ' ME.message], ...
+              'Error', 'error');
+   end
+end
+
+% FUNCIÓN PARA GRAFICAR RESULTADOS DEL PERCEPTRÓN
+function graficarResultadosPerceptron(X, W, b, numDim)
+    set(groot, 'defaultAxesTickLabelInterpreter','latex'); 
+    set(groot, 'defaultLegendInterpreter','latex');
+    set(groot, 'defaultTextInterpreter','latex');
+   % Extraer coordenadas
+   x_1 = X(1,:);
+   x_2 = X(2,:);
+   if numDim >= 3
+       x_3 = X(3,:);
+   end
+   
+   figure('WindowState','maximized');
+   hold on;
+   
+   if numDim == 2
+       % --- GRÁFICO 2D ---
+       % Graficar los puntos de datos y su clasificación
+       for k = 1:length(x_1)
+           punto_actual = [x_1(k); x_2(k)];
+           yp = W * punto_actual + b;
+           if yp >= 0
+               plot(x_1(k), x_2(k), 'ro', 'MarkerFaceColor', 'r', 'MarkerSize', 8);
+           else
+               plot(x_1(k), x_2(k), 'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 8);
+           end
+       end
+       
+       % Graficar línea de decisión
+       x1_range = linspace(min(x_1), max(x_1), 100);
+       x2_decision = -(W(1) * x1_range + b) / W(2);
+       plot(x1_range, x2_decision, 'k--', 'LineWidth', 2);
+       
+       % Configuración visual
+       title('Clasificaci\''on del Perceptr\''on y L\''inea de Decisi\''on en 2D','FontSize', 14,Interpreter='latex');
+       xlabel('Entrada $x_{1}$','FontSize', 14,Interpreter='latex');
+       ylabel('Entrada $x_{2}$','FontSize', 14,Interpreter='latex');
+       grid on;
+       
+       % Leyenda
+       h_clase1 = plot(NaN, NaN, 'ro', 'MarkerFaceColor', 'r');
+       h_clase0 = plot(NaN, NaN, 'bo', 'MarkerFaceColor', 'b');
+       h_linea = plot(NaN, NaN, 'k--', 'LineWidth', 2);
+       legend([h_clase1, h_clase0, h_linea], ...
+              {'Clase 1', 'Clase 0', 'L\\inea de Decisi\''on'}, ...
+              'Location', 'northeast','FontSize', 12, Interpreter='latex');
+       
+   else
+       % --- GRÁFICO 3D ---
+       % Graficar los puntos de datos y su clasificación
+       for k = 1:length(x_1)
+           punto_actual = [x_1(k); x_2(k); x_3(k)];
+           yp = W * punto_actual + b;
+           if yp >= 0
+               plot3(x_1(k), x_2(k), x_3(k), 'ro', 'MarkerFaceColor', 'r');
+           else
+               plot3(x_1(k), x_2(k), x_3(k), 'bo', 'MarkerFaceColor', 'b');
+           end
+       end
+       
+       % Graficar el plano de decisión
+       x1_range = linspace(min(x_1), max(x_1), 10);
+       x2_range = linspace(min(x_2), max(x_2), 10);
+       [X1_grid, X2_grid] = meshgrid(x1_range, x2_range);
+       X3_grid = -(W(1) * X1_grid + W(2) * X2_grid + b) / W(3);
+       h_plano = surf(X1_grid, X2_grid, X3_grid, 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'FaceColor', [1 0.8 0.2]);
+       
+       % Configuración visual
+       title('Clasificaci\''on del Perceptr\''on y Plano de Decisi\''on en 3D','FontSize', 14,Interpreter='latex');
+       xlabel('Entrada $x_{1}$','FontSize', 14,Interpreter='latex');
+       ylabel('Entrada $x_{2}$','FontSize', 14,Interpreter='latex');
+       zlabel('Entrada $x_{3}$','FontSize', 14,Interpreter='latex');
+       grid on;
+       
+       % Leyenda
+       h_clase1 = plot3(NaN, NaN, NaN, 'ro', 'MarkerFaceColor', 'r');
+       h_clase0 = plot3(NaN, NaN, NaN, 'bo', 'MarkerFaceColor', 'b');
+       legend([h_clase1, h_clase0, h_plano], ...
+              {'Clase 1', 'Clase 0', 'Plano de Decisi\''on'}, ...
+              'Location', 'northwest','FontSize', 12,Interpreter='latex');
+       view(3);
+       rotate3d on;
+   end
+   
+   hold off;
+   
+   % Botón para volver al menú
+   uicontrol('Style', 'pushbutton', 'String', 'Volver al Menú', ...
+             'Position', [20 20 120 30], 'FontSize', 10, ...
+             'Callback', @(~,~) volverMenu(gcf));
+   
+   function volverMenu(figActual)
+       close(figActual);
+       interfazSeleccionRed();
+   end
+end
+
+function entrenarAdalineRegresion(archivo, epocasMax, tasaAprendizaje, errorPermitido)
+    try
+        % Cargar datos
+        datos = cargarDatos(archivo);
+        x_1 = datos(:,1)';
+        x_2 = datos(:,2)';
+        T = datos(:,3)';
+        
+        % Datos de entrenamiento
+        N = length(x_1);
+        ind40 = 1:round(0.4*N); % Toma los primeros 40 % de los datos
+        ind30f = (N-round(0.3*N)+1):N; % Toma los últimos 30 % de los datos
+        ind_total = [ind40 ind30f];
+        P = [x_1(ind_total); x_2(ind_total)];
+        Target = T(ind_total);
+        
+        % Parámetros
+        tasa_aprendizaje_local = tasaAprendizaje;
+        b = rand(1);
+        W = rand(1, 2);
+        epoca = 0;
+        e_p = errorPermitido; % Error permitido
+        EMC = 100;
+        
+        % Arrays para almacenar progreso
+        EMC_T = [];
+        
+        % Ciclo de entrenamiento
+        while ((EMC > e_p) && (epoca < epocasMax))
+            for k=1:length(Target)
+                % La salida parcial es la misma salida total
+                yt(k) = W*P(:, k) + b;
+                % Error y actualización de pesos
+                e(k) = Target(k) - yt(k);
+                W = W + tasa_aprendizaje_local*e(k)*P(:,k)';
+                b = b + tasa_aprendizaje_local*e(k);
+            end
+            epoca = epoca + 1;
+            % Cálculo EMC (Error Cuadrático Medio)
+            EMC = (1/length(Target))*sum(e.^2);
+            EMC_T(epoca) = EMC;
+            
+        end
+        
+        % Mostrar resultados finales
+        fprintf('\n=== RESULTADOS FINALES ===\n');
+        fprintf('Épocas completadas: %d\n', epoca);
+        fprintf('Error Cuadrático Medio (MSE) final: %.6f\n', EMC);
+        fprintf('Pesos finales: W = [%.4f %.4f]\n', W(1), W(2));
+        fprintf('Bias final: b = %.4f\n', b);
+        
+        % Verificar convergencia
+        if EMC <= e_p
+            fprintf('Convergencia alcanzada en época %d\n', epoca);
+        else
+            fprintf('Máximo de épocas alcanzado sin convergencia\n');
+        end
+        
+        % Mensaje para el usuario
+        mensaje = sprintf(['ADALINE ENTRENADO EXITOSAMENTE\n\n' ...
+                          '• Épocas completadas: %d\n' ...
+                          '• MSE final: %.6f\n' ...
+                          'Los gráficos se mostrarán a continuación.'], ...
+                          epoca, EMC);
+        
+        msgbox(mensaje, 'Entrenamiento Completado', 'help');
+        
+        % Generar gráficos
+        graficarResultadosAdaline(x_1, x_2, T, P, Target, W, b, EMC_T,epoca);
+        
+        
+    catch ME
+        fprintf('ERROR: %s\n', ME.message);
+        msgbox(['Error durante el entrenamiento de Adaline: ' ME.message], ...
+               'Error', 'error');
+    end
+end
+   
+function graficarResultadosAdaline(x_1, x_2, T, P, Target, W, b, EMC_T,epoca)
+    % Gráfico de convergencia del error
+    fig = figure('WindowState','maximized');
+    subplot(1,2,2);
+    semilogx(EMC_T, 'b-', 'LineWidth', 2);
+    title('Convergencia del Error Cuadr\''atico Medio (MSE)','FontSize', 14,Interpreter='latex');
+    xlabel('\''Epoca','FontSize', 14,Interpreter='latex');
+    ylabel('MSE','FontSize', 14);
+    grid on;
+
+    % Gráfico del plano de regresión
+    subplot(1,2,1);
+    [X1, X2] = meshgrid(linspace(min(x_1), max(x_1), 30), linspace(min(x_2), max(x_2), 30));
+    Z = W(1)*X1 + W(2)*X2 + b;
+    
+    % Puntos reales usados en entrenamiento
+    x1_plot = P(1,:);
+    x2_plot = P(2,:);
+    plot3(x1_plot, x2_plot, Target, 'ro', 'MarkerFaceColor', 'y', 'MarkerSize', 8); 
+    hold on;
+    mesh(X1, X2, Z, 'FaceAlpha', 0.7, 'EdgeColor', [0.5 0.5 0.5]);
+    xlabel('$x_{1}$','FontSize', 14);
+    ylabel('$x_{2}$','FontSize', 14);
+    zlabel('Target','FontSize', 14);
+    title('Plano de regresi\''on aprendido por ADALINE','FontSize', 14,Interpreter='latex');
+    legend('Datos de entrenamiento', 'Plano aprendido', 'Location', 'best','FontSize', 12,Interpreter='latex');
+    grid on; 
+    view(45, 25);
+
+    % Botón para volver al menú
+    uicontrol('Style', 'pushbutton', 'String', 'Volver al Menú', ...
+              'Position', [20 20 120 30], 'FontSize', 10, ...
+              'Callback', @(~,~) volverMenu(gcf));
+    
+    function volverMenu(figActual)
+        close(figActual);
+        interfazSeleccionRed();
+    end
+end
+
+
+%% 
+function datos = cargarDatosFiltrado(archivo)
+    try
+        [~,~,ext] = fileparts(archivo);
+        
+        if strcmp(ext, '.mat')
+            % Para archivos .mat usar load()
+            datos = load(archivo);
+            % Verificar si es una estructura (archivo .mat)
+            if isstruct(datos)
+                % Obtener el primer campo de la estructura
+                campos = fieldnames(datos);
+                datos = datos.(campos{1});
+            end
+        else
+            % Para archivos de texto (.txt, .csv, etc.) usar readmatrix()
+            try
+                % Intentar leer todo el archivo primero
+                datos = readmatrix(archivo);
+            catch
+                % Si falla, intentar con diferentes delimitadores
+                try
+                    datos = readmatrix(archivo, 'Delimiter', ' ');
+                catch
+                    try
+                        datos = readmatrix(archivo, 'Delimiter', '\t');
+                    catch
+                        % Último intento: leer como texto y convertir
+                        datos = readmatrix(archivo, 'OutputType', 'double');
+                    end
+                end
+            end
+        end
+        
+        % Asegurar que sea una matriz numérica
+        if ~isnumeric(datos)
+            error('El archivo debe contener datos numéricos.');
+        end
+        
+        % Detectar y remover encabezado si existe
+        if size(datos, 1) > 1
+            % Verificar si la primera fila podría ser un encabezado
+            primera_fila = datos(1, :);
+            
+            % Si la primera fila tiene valores NaN o infinitos, es un encabezado
+            if any(isnan(primera_fila)) || any(isinf(primera_fila))
+                datos = datos(2:end, :);
+                fprintf('Encabezado con valores no numéricos detectado y removido.\n');
+            else
+                % Verificar si la primera fila tiene un patrón muy diferente al resto
+                if size(datos, 1) > 2
+                    % Calcular estadísticas de la primera fila vs el resto
+                    media_primera = mean(primera_fila);
+                    media_resto = mean(datos(2:end, :), 'all');
+                    std_resto = std(datos(2:end, :), [], 'all');
+                    
+                    % Si la diferencia es muy grande, probablemente sea encabezado
+                    if std_resto > 0 && abs(media_primera - media_resto) > 3 * std_resto
+                        datos = datos(2:end, :);
+                        fprintf('Posible encabezado numérico detectado y removido.\n');
+                    end
+                end
+            end
+        end
+        
+        % Remover filas con valores NaN que puedan haber quedado
+        if any(isnan(datos(:)))
+            filas_validas = ~any(isnan(datos), 2);
+            datos = datos(filas_validas, :);
+            fprintf('Filas con valores NaN removidas.\n');
+        end
+        
+        % Verificar dimensiones mínimas para filtrado
+        [filas, columnas] = size(datos);
+        if filas < 3
+            error('Los datos deben tener al menos 3 filas para el filtrado.');
+        end
+        
+        % Para filtrado, solo necesitamos que tenga suficientes muestras
+        % No importa si tiene 1 o múltiples columnas
+        fprintf('Archivo cargado exitosamente: %d filas x %d columnas\n', filas, columnas);
+        
+    catch ME
+        if contains(ME.message, 'No such file')
+            error('No se pudo encontrar el archivo: %s', archivo);
+        else
+            error('Error al cargar el archivo: %s', ME.message);
+        end
+    end
+end
+
+function entrenarAdalineFiltrado(archivo, epocasMax, tasaAprendizaje, errorPermitido, regresores)
+    try
+        % Cargar datos
+        datos = cargarDatosFiltrado(archivo);
+        
+        % Verificar dimensiones de los datos
+        [filas, columnas] = size(datos);
+        fprintf('Dimensiones de los datos: %d filas x %d columnas\n', filas, columnas);
+       
+        if columnas == 1
+            % Si solo hay una columna, usar toda la columna
+            ECG_original = datos(:)';  % Señal original sin normalizar
+        else
+            % Si hay múltiples columnas, usar la primera
+            ECG_original = datos(:,1)';
+        end
+        
+        % Guardar parámetros de normalización ANTES del entrenamiento
+        datos_min = min(ECG_original);
+        datos_max = max(ECG_original);
+        rango_datos = datos_max - datos_min;
+        
+        % Normalizar SOLO para entrenamiento (esto es crítico para la convergencia)
+        if rango_datos > 0
+            ECG_normalizado = (ECG_original - datos_min) / rango_datos;
+            fprintf('Normalizando para entrenamiento: [%.4f, %.4f] -> [0, 1]\n', datos_min, datos_max);
+        else
+            ECG_normalizado = ECG_original; % Si todos los valores son iguales
+            fprintf('Señal constante detectada, sin normalización.\n');
+        end
+        
+        % Verificar que hay suficientes muestras
+        if length(ECG_normalizado) < regresores + 1
+            error('No hay suficientes muestras en la señal. Se necesitan al menos %d muestras para %d regresores.', regresores + 1, regresores);
+        end
+        
+        % Entradas y etiquetas (usando datos NORMALIZADOS)
+        num_muestras = length(ECG_normalizado) - regresores;
+        P = zeros(num_muestras, regresores);
+        for i = 1:regresores
+            P(:,i) = ECG_normalizado(i:i+num_muestras-1)';
+        end
+        Target = ECG_normalizado(regresores+1:end)';
+        
+        [f, c] = size(P);
+        
+        % Parámetros
+        b = rand(1) * 0.1; % Inicializar con valores pequeños
+        W = rand(1, regresores) * 0.1; % Inicializar con valores pequeños
+        n = tasaAprendizaje;
+        
+        % Arrays para guardar progreso
+        errores_epoca = [];
+        epoca = 0;
+        yt_normalizado = zeros(1, f); % Salidas normalizadas
+        
+        fprintf('=== ENTRENAMIENTO ADALINE FILTRADO ===\n');
+        fprintf('Número de regresores: %d\n', regresores);
+        fprintf('Tasa de aprendizaje: %.6f\n', n);
+        fprintf('=====================================\n\n');
+                   
+            % Ciclo principal
+            for k = 1:f
+                % Calcular salida (normalizada)
+                yt_normalizado(k) = W * P(k,:)' + b;
+                % Error y actualización de pesos
+                e(k) = Target(k) - yt_normalizado(k);
+                W = W + n * e(k) * P(k,:);
+                b = b + n * e(k);
+            end
+
+        
+        % DESNORMALIZAR los resultados para mostrar en escala original
+        if rango_datos > 0
+            yt_desnormalizado = yt_normalizado * rango_datos + datos_min;
+            error_real = mean(abs(ECG_original(regresores+1:end) - yt_desnormalizado));
+        else
+            yt_desnormalizado = yt_normalizado;
+            error_real = mean(abs(ECG_original(regresores+1:end) - yt_desnormalizado));
+        end
+        
+        % Mostrar resultados finales
+        fprintf('\n=== RESULTADOS FINALES ===\n');
+        fprintf('Pesos finales: W = [%s]\n', sprintf('%.4f ', W));
+        fprintf('Sesgo final: b = %.4f\n', b);
+        fprintf('========================\n');
+        
+        % Mensaje de éxito
+        mensaje = sprintf(['ADALINE FILTRADO COMPLETADO\n\n' ...
+                          '• Regresores: %d\n' ...
+                          'Ver gráficos de resultados.'], ...
+regresores);
+        msgbox(mensaje, 'Filtrado Completado', 'help');
+        
+        % Llamar función de graficación con datos desnormalizados
+        graficarAdalineFiltrado(ECG_original, yt_desnormalizado, regresores);
+        
+    catch ME
+        fprintf('ERROR: %s\n', ME.message);
+        msgbox(['Error durante el filtrado Adaline: ' ME.message], 'Error', 'error');
+        interfazSeleccionRed();
+    end
+end
+
+
+function graficarAdalineFiltrado(ECG_original, yt_desnormalizado, regresores)
+    % Habilita la interpretación de LaTeX para todos los elementos de texto
+    set(groot, 'defaultAxesTickLabelInterpreter','latex'); 
+    set(groot, 'defaultLegendInterpreter','latex');
+    set(groot, 'defaultTextInterpreter','latex');
+    figure('Name', 'Resultados Adaline Filtrado (Escala Original)','WindowState','maximized');
+    % Señal original
+    subplot(2,1,1);
+    plot(ECG_original, 'b-', 'LineWidth', 1.5);
+    title('Senal ECG Original','interpreter','latex');
+    xlabel('Muestras','interpreter','latex');
+    ylabel('Amplitud (Escala Original)','interpreter','latex');
+    grid on;
+    ylim([min(ECG_original)*0.95, max(ECG_original)*1.05]);
+    
+    % Comparación
+    subplot(2,1,2);
+    plot(ECG_original, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Original');
+    hold on;
+    plot(regresores+1:length(ECG_original), yt_desnormalizado, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Filtrada');
+    title('Comparaci\''on: Senal Original vs Filtrada (Escala Original)','interpreter','latex');
+    xlabel('Muestras','interpreter','latex');
+    ylabel('Amplitud (Escala Original)','interpreter','latex');
+    legend('show','interpreter','latex');
+    grid on;
+    hold off;
+    
+    % Mostrar estadísticas en la gráfica
+    error_absoluto = mean(abs(ECG_original(regresores+1:end) - yt_desnormalizado));
+    text(0.02, 0.98, sprintf('Error medio: %.4f', error_absoluto), ...
+         'Units', 'normalized', 'VerticalAlignment', 'top', ...
+         'BackgroundColor', 'white', 'EdgeColor', 'black');
+    
+    
+    % Botón para volver al menú
+    uicontrol('Style', 'pushbutton', 'String', 'Volver al Menú', ...
+              'Position', [20 20 120 30], 'FontSize', 10, ...
+              'Callback', @(~,~) volverMenu(gcf));
+    
+    function volverMenu(figActual)
+        close(figActual);
+        interfazSeleccionRed();
+    end
+end
+
+% % FUNCIÓN PARA GRAFICAR SEÑAL ORIGINAL VS FILTRADA
+% function graficarAdalineFiltrado(ECG, yt, regresores)
+%    figure('Name', 'Resultados Adaline Filtrado', 'WindowState','maximized');
+%    % Señal original
+%    subplot(2,1,1);
+%    plot(ECG, 'b-', 'LineWidth', 1.5);
+%    title('Señal ECG Original');
+%    xlabel('Muestras');
+%    ylabel('Amplitud');
+%    grid on;
+% 
+%    % Comparación
+%    subplot(2,1,2);
+%    plot(ECG, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Original');
+%    hold on;
+%    plot(regresores+1:length(ECG), yt, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Filtrada');
+%    title('Comparación: Señal Original vs Filtrada');
+%    xlabel('Muestras');
+%    ylabel('Amplitud');
+%    legend('show');
+%    grid on;
+%    hold off;
+% 
+%    % Botón para volver al menú
+%    uicontrol('Style', 'pushbutton', 'String', 'Volver al Menú', ...
+%              'Position', [200 50 200 30], 'FontSize', 10, ...
+%              'Callback', @(~,~) volverMenu(gcf));
+% 
+%    function volverMenu(figActual)
+%        close(figActual);
+%        interfazSeleccionRed();
+%    end
+% end
+
+%%
+% RED NEURONAL MULTICAPA (MRNA)
+function entrenarMRNA(archivo, epocasMax, tasaAprendizaje, errorPermitido, neuronasOcultas, numeroRegresores)
+    try
+        data = cargarDatos(archivo);
+        t = data(:,1)';   % Tiempo
+        U = data(:,2)';   % Entrada
+        Y = data(:,3)';   % Salida
+        % figure(1)
+        % plot(t,U,t,Y)
+        %% Normalización de datos
+        [y_norm,y_min,y_max] = normalizar(Y);
+        [u_norm,u_min,u_max] = normalizar(U);
+        % plot(t,u_norm,t,y_norm)
+        %% Hiperparámetros
+        muestras = numeroRegresores;
+        Nocu = neuronasOcultas; % Número de neuronas en la capa oculta
+        Nout = 1; % Número de neuronas en la capa de salida
+        alpha = tasaAprendizaje; % Tasa de aprendizaje
+        train_percentage = 0.7; % Porcentaje de datos de entrenamiento
+        validation_percentage = 0.15; % Porcentaje de datos de validación
+        max_epoch = epocasMax; % Épocas máxmimas permitidas
+        EMC = 100; % Error medio cuadrático
+        epoch = 0; % Épocas
+        ep = errorPermitido; % error permitido
+        %% Separación de datos para entrenamiento y validación
+        patrones_totales = length(y_norm)-muestras;
+        indices_posibles = 1:patrones_totales;
+        % Se desordena aletoriamente los indices posibles
+        indices_random = randperm(patrones_totales);
+        % Se calculan los patrones del set de entrenamiento
+        num_train = floor(train_percentage * patrones_totales);
+        % Se calculan los patrones del set de validación
+        num_validation = floor(validation_percentage * patrones_totales);
+        % Se dividen los indices para ambas partes
+        train_indexes = indices_random(1:num_train);
+        validation_indexes = indices_random(num_train + 1: num_validation+num_train + 1);
+        % Datos de entrenamiento
+        for i = 1:length(train_indexes)
+            index = train_indexes(i);
+        
+            % Se define el final de la ventana de regresores
+            f_index = index + muestras - 1;
+            % Se extrae la ventana de regresores de la entrada y salida
+            y_train = y_norm(index:f_index);
+            u_train = u_norm(index:f_index);
+            
+            % Patrones de entrada
+            P_train(:, i) = [y_train u_train];
+            % Target
+            T_train(i) = y_norm(index + muestras);
+        end
+        % Datos de validación
+        for i = 1:length(validation_indexes)
+            index = validation_indexes(i);
+        
+            % Se define el final de la ventana de regresores
+            f_index = index + muestras - 1;
+        
+            % Se extrae la ventana de regresores de la entrada y salida
+            y_validation = y_norm(index:f_index);
+            u_validation = u_norm(index:f_index);
+            
+            % Patrones de entrada
+            P_validation(:,i) = [y_validation u_validation];
+            % Target
+            T_validation(i) = y_norm(index + muestras);
+        end
+        Nin = length(P_train(:,1));; % Numero de entradas
+        %% Inicialización de pesos y bias para la capa oculta
+        Wini = 1+(-1-1)*rand(Nocu,Nin);
+        bini = 1+(-1-1)*rand(Nocu,1);
+        %% Inicialización de pesos y bias para la capa de salida
+        Wout = 1+(-1-1)*rand(Nout,Nocu);
+        bout = 1+(-1-1)*rand(Nout,1);
+        %% Ciclo para entrenamiento
+        while ((epoch < max_epoch) && (EMC > ep))
+            for k = 1:size(P_train,2)
+                %% Salida parcial de la capa oculta
+                yp_ocu = Wini*P_train(:,k) + bini;
+                %% Salida total de la capa oculta
+                yt_ocu = sigmoide(yp_ocu);
+                %% Salida parcial de la capa de salida
+                yp_out = Wout*yt_ocu + bout;
+                %% Salida total de la capa de salida
+                yt_out = sigmoide(yp_out);
+                %% Error
+                e_train(k) = T_train(k)-yt_out;
+                %% Delta capa de salida
+                delta_out = e_train(k)*dsigmoide(yp_out);
+                %% Delta capa oculta
+                delta_ocu = dsigmoide(yp_ocu).*Wout'*delta_out;
+                %% Actualización de pesos
+                Wout = Wout + alpha*delta_out*yt_ocu';
+                Wini = Wini + alpha*delta_ocu*P_train(:,k)';
+                %% Actualización de bias
+                bini = bini + alpha*delta_ocu;
+                bout = bout + alpha*delta_out;
+                %% Validación (15%)
+            end
+            for k = 1:size(P_validation,2)
+                %% Salida parcial de la capa oculta
+                yp_ocu = Wini*P_validation(:,k) + bini;
+                %% Salida total de la capa oculta
+                yt_ocu = sigmoide(yp_ocu);
+                %% Salida parcial de la capa de salida
+                yp_out = Wout*yt_ocu + bout;
+                %% Salida total de la capa de salida
+                yt_out = sigmoide(yp_out);
+                %% Error
+                e_validation(k) = T_validation(k)-yt_out;
+            end
+            epoch = epoch + 1;
+            EMC = (1/length(P_train(1,:)))*sum(e_train.^2);
+            EMC_train(epoch) = EMC;
+            EMC_validation(epoch) = (1/length(P_validation(1,:)))*sum(e_validation.^2);
+        end
+        %% Prueba
+        patrones_totales = length(y_norm) - muestras;
+        P_total = zeros(2*muestras,patrones_totales);
+        for i = 1:patrones_totales
+            index = i;
+            f_index = index + muestras - 1;
+            ventana_y_norm = y_norm(index:f_index)';
+            ventana_u_norm = u_norm(index:f_index)';
+            P_total(:,i) = [ventana_y_norm; ventana_u_norm];
+        end
+        % Predicción
+        y_pred_norm = sigmoide(Wout * sigmoide(Wini * P_total + bini) + bout);
+        % Desnormalización de la predicción
+        y_pred = desnormalizar(y_pred_norm,y_min,y_max);
+        T_real = Y(muestras + 1 : end);
+        %% Resultados
+        fprintf('\n=== RESULTADOS MRNA ===\n');
+        fprintf('Épocas completadas: %d\n', epoch);
+        fprintf('EMC entrenamiento final: %.6f\n', EMC_train(end));
+        fprintf('EMC validación final:    %.6f\n', EMC_validation(end));
+        fprintf('=======================\n');
+        
+        msgbox(sprintf(['MRNA COMPLETADO\n' ...
+                        'Épocas: %d\n' ...
+                        'Error entrenamiento: %.6f\n' ...
+                        'Error validación:    %.6f'], ...
+                        epoch, EMC_train(end), EMC_validation(end)), ...
+               'Entrenamiento Completado','help');
+
+        %% Gráficas
+        graficarMRNA(t,Y,U,y_pred,EMC_train,EMC_validation,muestras);
+    catch ME
+        fprintf('ERROR: %s\n', ME.message);
+        for k = 1:length(ME.stack)
+            fprintf('  En archivo: %s (función: %s), línea: %d\n', ...
+                ME.stack(k).file, ME.stack(k).name, ME.stack(k).line);
+        end
+        msgbox(['Error en MRNA: ' ME.message],'Error','error');
+    end
+end
+function graficarMRNA(t,Y,U,y_pred,EMC_train,EMC_validation,muestras)
+    set(groot, 'defaultAxesTickLabelInterpreter','latex'); 
+    set(groot, 'defaultLegendInterpreter','latex');
+    set(groot, 'defaultTextInterpreter','latex');
+    fig = figure('WindowState','maximized');
+
+    % Layout de 2 filas x 2 columnas
+    tLayout = tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
+
+    ax1 = nexttile(1);
+    plot(ax1, t, Y,'b','LineWidth',2.0); hold(ax1,'on');
+    plot(ax1, t(muestras+1:end), y_pred,'r','LineWidth',2.0);
+    legend1 = legend(ax1, 'Salida Real Y','Predicci\''on MRNA','Location','north','interpreter','latex');
+    set(legend1,...
+    'Position',[0.0416666674039637 0.961288509124618 0.0760416651920726 0.0379023873793621]);
+    title(ax1,'Salida real vs predicci\''on','interpreter','latex');
+    xlabel(ax1,'Tiempo','interpreter','latex'); ylabel(ax1,'Amplitud','interpreter','latex');
+    grid(ax1,'on');
+
+    ax2 = nexttile(3);
+    plot(ax2, t, U,'k','LineWidth',1.5);
+    legend(ax2, 'Entrada U','Location','best','interpreter','latex');
+    title(ax2,'Entrada del sistema','interpreter','latex');
+    xlabel(ax2,'Tiempo','interpreter','latex'); ylabel(ax2,'Amplitud','interpreter','latex');
+    grid(ax2,'on');
+
+    ax3 = nexttile(2,[2 1]);
+    semilogy(ax3, EMC_train,'b','LineWidth',1.5); hold(ax3,'on');
+    semilogy(ax3, EMC_validation,'r','LineWidth',1.5);
+    legend(ax3, 'EMC entrenamiento','EMC validaci\''on','Location','best','interpreter','latex');
+    title(ax3,'Evoluci\''on del error EMC','interpreter','latex');
+    xlabel(ax3,'\''Epocas','interpreter','latex'); ylabel(ax3,'Error (log)','interpreter','latex');
+    grid(ax3,'on');
+
+    % Botón para volver al menú
+    uicontrol('Style', 'pushbutton', 'String', 'Volver al Menú', ...
+             'Position', [150 470 200 30], 'FontSize', 10, ...
+             'Callback', @(~,~) volverMenu(gcf));
+    function volverMenu(figActual)
+       close(figActual);
+       interfazSeleccionRed();
+   end
+end
+function y = sigmoide(x), y = 1./(1+exp(-x)); end
+function y = dsigmoide(x), sx = sigmoide(x); y = sx.*(1-sx); end
+function [x_norm,x_min,x_max] = normalizar(x)
+    x_min = min(x); x_max = max(x);
+    if x_min==x_max, x_min=1; end
+    x_norm = (x-x_min)/(x_max-x_min);
+end
+function x_desnorm = desnormalizar(x_norm,x_min,x_max)
+    x_desnorm = x_norm*(x_max-x_min)+x_min;
+end
